@@ -1,9 +1,11 @@
 import sys
+import time
 import warnings
 
 import numpy as np
 import pandas as pd
 from astropy.io import fits
+from astropy.table import Table
 from astropy.coordinates import SkyCoord, BarycentricMeanEcliptic
 
 from lifesim.util.options import Options
@@ -31,6 +33,7 @@ class Data(object):
         Location of the Options class. All options and free parameters used in a LIFEsim simulation
         must be stored here.
     """
+
     def __init__(self):
         self.inst = {}
         self.catalog = None
@@ -46,8 +49,7 @@ class Data(object):
                           input_path: str,
                           overwrite: bool = False):
         """
-        Read the contents of the P-Pop output file (in .txt or .fits format) to a catalog. Note that reading catalogs
-        in .fits format is significantly faster.
+        Read the contents of the P-Pop output file (in .txt or .fits format) to a catalog.
 
         Parameters
         ----------
@@ -66,6 +68,13 @@ class Data(object):
         if (self.catalog is not None) and (not overwrite):
             raise ValueError('A catalog has already been imported. Delete the old catalog or set '
                              'overwrite=True')
+
+        # set keys for the stellar types to avoid type mismatched DataFrames
+        self.other['stype_key'] = {'A': 0,
+                                   'F': 1,
+                                   'G': 2,
+                                   'K': 3,
+                                   'M': 4}
 
         # initialize catalog
         self.catalog = pd.DataFrame(columns=['radius_p',
@@ -96,14 +105,13 @@ class Data(object):
                                              'nuniverse',
                                              'nstar',
                                              'stype',
-                                             'id',
-                                             'name_s'])
+                                             'id'])
 
         # check the format of the input file
         if input_path[-4:] == '.txt':
             table = open(input_path, 'r')
             table_lines = table.readlines()
-
+            # self.table_rogier = table ############# rogier edit
             nuniverse = []
             radius_p = []  # Rearth
             p_orb = []  # d
@@ -132,7 +140,6 @@ class Data(object):
             stype = []
             ra = []  # deg
             dec = []  # deg
-            name_s = []
 
             nlines = len(table_lines)
 
@@ -141,9 +148,6 @@ class Data(object):
             # of the old Ppop.
 
             tempLine = table_lines[1].split('\t')
-
-            get_name = ('name' in tempLine)
-
             col_nuniverse = np.where(np.array(tempLine) == 'Nuniverse')[0][0]
             col_radius_p = np.where(np.array(tempLine) == 'Rp')[0][0]
             col_p_orb = np.where(np.array(tempLine) == 'Porb')[0][0]
@@ -172,9 +176,6 @@ class Data(object):
             col_stype = np.where(np.array(tempLine) == 'Stype')[0][0]
             col_ra = np.where(np.array(tempLine) == 'RA')[0][0]
             col_dec = np.where(np.array(tempLine) == 'Dec')[0][0]
-
-            if get_name:
-                col_name_s = np.where(np.array(tempLine) == 'name')[0][0]
 
             for i, line in enumerate(table_lines[2:]):
 
@@ -212,18 +213,16 @@ class Data(object):
                 ra += [float(tempLine[col_ra])]  # deg
                 dec += [float(tempLine[col_dec])]  # deg
 
-                if get_name:
-                    name_s += [str(tempLine[col_name_s])]
-
             sys.stdout.write('\rProcessed line %.0f of %.0f' % (nlines, nlines))
             sys.stdout.flush()
             print('')
 
-            # remove the newline string from the star names
-            if get_name:
-                name_s = [name.replace('\n', '') for name in name_s]
-            else:
-                name_s = ['None'] * len(dec)
+            # TODO: Move the stype to char
+            # convert stellar type to int
+            stype = np.array(stype)
+            stype_int = np.zeros_like(stype, dtype=int)
+            for _, k in enumerate(self.other['stype_key'].keys()):
+                stype_int[stype == k] = self.other['stype_key'][k]
 
             # save the data to the pandas DataFrame
             self.catalog['nuniverse'] = np.array(nuniverse).astype(int)
@@ -251,88 +250,58 @@ class Data(object):
             self.catalog['mass_s'] = np.array(mass_s)
             self.catalog['temp_s'] = np.array(temp_s)
             self.catalog['distance_s'] = np.array(distance_s)
-            self.catalog['stype'] = pd.Series(stype, dtype=pd.StringDtype())
+            self.catalog['stype'] = stype_int
             self.catalog['ra'] = np.array(ra)
             self.catalog['dec'] = np.array(dec)
             self.catalog['id'] = np.arange(0, len(dec), 1)
-            self.catalog['name_s'] = pd.Series(name_s, dtype=pd.StringDtype())
 
         # check the format of the input file
         elif input_path[-5:] == '.fits':
             hdu = fits.open(input_path)
-
-            get_name = ('name' in hdu[1].columns.names)
+            stype_int = np.zeros_like(hdu[1].data.Nstar.astype(int), dtype=int)
+            for _, k in enumerate(self.other['stype_key'].keys()):
+                stype_int[hdu[1].data.Stype.astype(str) == k] = self.other['stype_key'][k]
 
             # save the data to the pandas DataFrame, make sure it is saved in the correct type
             # some errors were produced here by not respecting the endianess of the data (numpy
             # usually works with little endian)
-            if get_name:
-                self.catalog = pd.DataFrame({'nuniverse': hdu[1].data.Nuniverse.astype(int),
-                                             'nstar': hdu[1].data.Nstar.astype(int),
-                                             'stype': pd.Series(hdu[1].data.Stype, dtype=pd.StringDtype()),
-                                             'id': np.arange(0, hdu[1].data.Dec.shape[0], 1).astype(int),
-                                             'radius_p': hdu[1].data.Rp.astype(float),
-                                             'p_orb': hdu[1].data.Porb.astype(float),
-                                             'mass_p': hdu[1].data.Mp.astype(float),
-                                             'ecc_p': hdu[1].data.ep.astype(float),
-                                             'inc_p': hdu[1].data.ip.astype(float),
-                                             'large_omega_p': hdu[1].data.Omegap.astype(float),
-                                             'small_omega_p': hdu[1].data.omegap.astype(float),
-                                             'theta_p': hdu[1].data.thetap.astype(float),
-                                             'albedo_bond': hdu[1].data.Abond.astype(float),
-                                             'albedo_geom_vis': hdu[1].data.AgeomVIS.astype(float),
-                                             'albedo_geom_mir': hdu[1].data.AgeomMIR.astype(float),
-                                             'z': hdu[1].data.z.astype(float),
-                                             'semimajor_p': hdu[1].data.ap.astype(float),
-                                             'sep_p': hdu[1].data.rp.astype(float),
-                                             'angsep': hdu[1].data.AngSep.astype(float),
-                                             'maxangsep': hdu[1].data.maxAngSep.astype(float),
-                                             'flux_p': hdu[1].data.Fp.astype(float),
-                                             'fp': hdu[1].data.fp.astype(float),
-                                             'temp_p': hdu[1].data.Tp.astype(float),
-                                             'radius_s': hdu[1].data.Rs.astype(float),
-                                             'mass_s': hdu[1].data.Ms.astype(float),
-                                             'temp_s': hdu[1].data.Ts.astype(float),
-                                             'distance_s': hdu[1].data.Ds.astype(float),
-                                             'ra': hdu[1].data.RA.astype(float),
-                                             'dec': hdu[1].data.Dec.astype(float),
-                                             'lat': hdu[1].data.lat.astype(float),
-                                             'lon': hdu[1].data.lon.astype(float),
-                                             'name_s': pd.Series(hdu[1].data.name, dtype=pd.StringDtype())})
-            else:
-                self.catalog = pd.DataFrame({'nuniverse': hdu[1].data.Nuniverse.astype(int),
-                                             'nstar': hdu[1].data.Nstar.astype(int),
-                                             'stype': pd.Series(hdu[1].data.Stype, dtype=pd.StringDtype()),
-                                             'id': np.arange(0, hdu[1].data.Dec.shape[0], 1).astype(int),
-                                             'radius_p': hdu[1].data.Rp.astype(float),
-                                             'p_orb': hdu[1].data.Porb.astype(float),
-                                             'mass_p': hdu[1].data.Mp.astype(float),
-                                             'ecc_p': hdu[1].data.ep.astype(float),
-                                             'inc_p': hdu[1].data.ip.astype(float),
-                                             'large_omega_p': hdu[1].data.Omegap.astype(float),
-                                             'small_omega_p': hdu[1].data.omegap.astype(float),
-                                             'theta_p': hdu[1].data.thetap.astype(float),
-                                             'albedo_bond': hdu[1].data.Abond.astype(float),
-                                             'albedo_geom_vis': hdu[1].data.AgeomVIS.astype(float),
-                                             'albedo_geom_mir': hdu[1].data.AgeomMIR.astype(float),
-                                             'z': hdu[1].data.z.astype(float),
-                                             'semimajor_p': hdu[1].data.ap.astype(float),
-                                             'sep_p': hdu[1].data.rp.astype(float),
-                                             'angsep': hdu[1].data.AngSep.astype(float),
-                                             'maxangsep': hdu[1].data.maxAngSep.astype(float),
-                                             'flux_p': hdu[1].data.Fp.astype(float),
-                                             'fp': hdu[1].data.fp.astype(float),
-                                             'temp_p': hdu[1].data.Tp.astype(float),
-                                             'radius_s': hdu[1].data.Rs.astype(float),
-                                             'mass_s': hdu[1].data.Ms.astype(float),
-                                             'temp_s': hdu[1].data.Ts.astype(float),
-                                             'distance_s': hdu[1].data.Ds.astype(float),
-                                             'ra': hdu[1].data.RA.astype(float),
-                                             'dec': hdu[1].data.Dec.astype(float),
-                                             'lat': hdu[1].data.lat.astype(float),
-                                             'lon': hdu[1].data.lon.astype(float),
-                                             'name_s': pd.Series(['None']*hdu[1].data.shape[0], dtype=pd.StringDtype())})
+            self.catalog = pd.DataFrame({'nuniverse': hdu[1].data.Nuniverse.astype(int),
+                                         'nstar': hdu[1].data.Nstar.astype(int),
+                                         'stype': stype_int,
+                                         'id': np.arange(0, hdu[1].data.Dec.shape[0], 1).astype(int),
+                                         'radius_p': hdu[1].data.Rp.astype(float),
+                                         'p_orb': hdu[1].data.Porb.astype(float),
+                                         'mass_p': hdu[1].data.Mp.astype(float),
+                                         'ecc_p': hdu[1].data.ep.astype(float),
+                                         'inc_p': hdu[1].data.ip.astype(float),
+                                         'large_omega_p': hdu[1].data.Omegap.astype(float),
+                                         'small_omega_p': hdu[1].data.omegap.astype(float),
+                                         'theta_p': hdu[1].data.thetap.astype(float),
+                                         'albedo_bond': hdu[1].data.Abond.astype(float),
+                                         'albedo_geom_vis': hdu[1].data.AgeomVIS.astype(float),
+                                         'albedo_geom_mir': hdu[1].data.AgeomMIR.astype(float),
+                                         'z': hdu[1].data.z.astype(float),
+                                         'semimajor_p': hdu[1].data.ap.astype(float),
+                                         'sep_p': hdu[1].data.rp.astype(float),
+                                         'angsep': hdu[1].data.AngSep.astype(float),
+                                         'maxangsep': hdu[1].data.maxAngSep.astype(float),
+                                         'flux_p': hdu[1].data.Fp.astype(float),
+                                         'fp': hdu[1].data.fp.astype(float),
+                                         'temp_p': hdu[1].data.Tp.astype(float),
+                                         'radius_s': hdu[1].data.Rs.astype(float),
+                                         'mass_s': hdu[1].data.Ms.astype(float),
+                                         'temp_s': hdu[1].data.Ts.astype(float),
+                                         'distance_s': hdu[1].data.Ds.astype(float),
+                                         'ra': hdu[1].data.RA.astype(float),
+                                         'dec': hdu[1].data.Dec.astype(float),
+                                         'lat': hdu[1].data.lat.astype(float),
+                                         'lon': hdu[1].data.lon.astype(float)})
             hdu.close()
+
+        # create array saving the stellar types in character format
+        self.other['stype'] = np.zeros_like(self.catalog.nstar, dtype=str)
+        for _, k in enumerate(self.other['stype_key']):
+            self.other['stype'][self.catalog.stype == self.other['stype_key'][k]] = k
 
         # create mask returning only unique stars
         _, temp = np.unique(self.catalog.nstar, return_index=True)
@@ -382,7 +351,7 @@ class Data(object):
     #   Think about this a bit more. It is important to keep the ints in the DataFrame, but that
     #   decreases usability. Maybe an option is to use intermediate masks for the stellar types.
     def catalog_remove_distance(self,
-                                stype: str,
+                                stype: int,
                                 dist: float,
                                 mode: str):
         """
@@ -391,9 +360,9 @@ class Data(object):
 
         Parameters
         ----------
-        stype : str
+        stype : int
             Planets around stars of the specified stellar type are removed. Possible options are
-            'A, 'F', 'G', 'K' and 'M'.
+            `0` for A-stars, `1` for F-stars, `2` for G-stars, `3` for K-stars and `4` for M-stars.
         dist : float
             Specifies the distance over or under which the planets are removed in pc.
         mode : str
@@ -403,9 +372,10 @@ class Data(object):
                         removed.
         """
 
+        # TODO: Reinstate this check once the int/sting problem is resolved.
         # check if stellar type is valid
-        if not np.isin(stype, np.array(('A', 'F', 'G', 'K', 'M'))):
-            raise ValueError('Stellar type not recognised')
+        # if not np.isin(stype, np.array(('A', 'F', 'G', 'K', 'M'))):
+        #     raise ValueError('Stellar type not recognised')
 
         # create masks selecting closer or more far away planets
         if mode == 'larger':
@@ -422,6 +392,33 @@ class Data(object):
         # drop the planets to remove from the data
         self.catalog = self.catalog.drop(np.where(mask)[0])
         self.catalog.index = np.arange(0, self.catalog.shape[0], 1)
+
+    def catalog_slice_data(self,
+                           start: int,
+                           stop: int,
+                           safe: bool = False):
+        """
+        Removes stars out of a selection. Quite a simple method, but it does refactor the indices. This makes handling
+        easier down the line. This comes in handy therefore in the case you want to shear the catalog at the start
+
+        Parameters
+        ----------
+        start : int
+            Index of first planet of selection of catalog. This planet becomes planet 0
+        stop : int
+            Index of final planet of selection of catalog. This planet is sadly destroyed, and planet stop-1 becomes
+            the last planet in the selection
+        safe : bool
+            Turns the function into a return function
+
+        """
+        if safe:
+            df = self.catalog.take(slice(start, stop))
+            df.index = np.arange(0, df.shape[0], 1)
+            return df
+        else:
+            self.catalog = self.catalog.take(slice(start, stop))
+            self.catalog.index = np.arange(0, self.catalog.shape[0], 1)
 
     def catalog_safe_add(self,
                          name: str,
@@ -453,9 +450,103 @@ class Data(object):
             raise ValueError('Data can not be overwritten in safe mode')
         self.catalog[name] = data
 
-    def export_catalog(self):
+    def catalog_add_planet(self,
+                            data: np.ndarray):
         """
-        Save the catalog to an file in the hdf-format.
+        Add planet to the catalog with manual settings.
+
+        Parameters
+        ----------
+        iloc : str
+            Name key of the data in the pandas DataFrame.
+        data : np.ndarray
+            The data tba to the catalog. Should sequentially contain all data from ppop as read by code in following
+            units:
+            'radius_p': earth radii
+            'p_orb': days
+            'mass_p': earth masses
+            'ecc_p': [0-1] -
+            'inc_p': [0-pi] rad
+            'large_omega_p': [0-pi] rad
+            'small_omega_p': [0-pi] rad
+            'theta_p': [0-2pi] rad
+            'albedo_bond': 0-0.8 -
+            'albedo_geom_vis': -
+            'albedo_geom_mir': -
+            'z': zodis or -
+            'semimajor_p': AU
+            'sep_p': AU
+            'angsep': Arcsec
+            'maxangsep': Arcsec
+            'flux_p': S earth
+            'fp': lambaertian reflectance -
+            'temp_p': K
+            'radius_s': solar radii
+            'mass_s': Solar Masses
+            'temp_s': K
+            'distance_s': parsec
+            'ra': deg
+            'dec': deg
+            'nuniverse' = 0
+            'nstar' = 0
+            'stype' : Kinda depends on T
+            'id' = 0
+            'lon': rad
+            'lat': rad
+            The habitable zone is calculated based on the habitable zone model.
+
+        Raises
+        ------
+        ValueError
+
+        """
+        # -----  check catalog ------
+        print('catalog before addition', self.catalog)
+        # -----  State column names
+        columns = ['radius_p', 'p_orb', 'mass_p', 'ecc_p', 'inc_p', 'large_omega_p',
+         'small_omega_p', 'theta_p', 'albedo_bond', 'albedo_geom_vis',
+         'albedo_geom_mir', 'z', 'semimajor_p', 'sep_p', 'angsep', 'maxangsep',
+         'flux_p', 'fp', 'temp_p', 'radius_s', 'mass_s', 'temp_s', 'distance_s',
+         'ra', 'dec', 'nuniverse', 'nstar', 'stype', 'id']
+        # -----  Add input columns and create dataframe
+        data_df = pd.DataFrame(data, columns=columns)
+        # -----  Add ecliptic lat and long
+        coord = SkyCoord(data_df.ra, data_df.dec, frame='icrs', unit='deg')
+        coord_ec = coord.transform_to(BarycentricMeanEcliptic())
+        data_df['lon'] = np.array(coord_ec.lon.radian)
+        data_df['lat'] = np.array(coord_ec.lat.radian)
+        # -----  Add habitable zone ------
+        data_df['s_in'],\
+        data_df['s_out'],\
+        data_df['l_sun'],\
+        data_df['hz_in'],\
+        data_df['hz_out'],\
+        data_df['hz_center'] = single_habitable_zone(model=self.options.models['habitable'],
+                                                     temp_s=data_df.temp_s,
+                                                     radius_s=data_df.radius_s)
+        # print('semimajor_p', data_df['semimajor_p'])
+        # print('habitable zone edges in/out ', data_df['hz_in'], data_df['hz_out'])
+        # print('radius', data_df['radius_p'])
+        data_df['habitable'] = np.logical_and.reduce((
+            (data_df['semimajor_p'] > data_df['hz_in']).to_numpy(),
+            (data_df['semimajor_p'] < data_df['hz_out']).to_numpy(),
+            (data_df['radius_p'].ge(0.5)).to_numpy(),
+            (data_df['radius_p'].le(1.5)).to_numpy()))
+        #  ------  add row to wider catalog
+        if self.catalog is None:
+            self.catalog = data_df
+            print('Catalog was created with planet ')
+            print(self.catalog)
+        else:
+            self.catalog = pd.concat([self.catalog, data_df], ignore_index=True)
+            print('planet was added to catalog: ', data_df, ' catalog is now ')
+            print(self.catalog)
+
+
+    def export_catalog(self,
+                       output_path: str):
+        """
+        Save the catalog to a file in the hdf-format.
 
         Parameters
         ----------
@@ -469,14 +560,7 @@ class Data(object):
         """
         if self.catalog is None:
             raise ValueError('No catalog found')
-
-        self.str_to_obj(reverse=False)
-        self.catalog.to_hdf(path_or_buf=self.options.other['output_path']
-                                        + self.options.other['output_filename'] + '_catalog.hdf5',
-                            key='catalog',
-                            mode='w')
-        self.str_to_obj(reverse=True)
-        print('Catalog saved')
+        self.catalog.to_hdf(path_or_buf=output_path, key='catalog', mode='w')
 
     def import_catalog(self,
                        input_path: str,
@@ -501,24 +585,106 @@ class Data(object):
 
         self.catalog = pd.read_hdf(path_or_buf=input_path,
                                    key='catalog')
-        self.str_to_obj(reverse=True)
 
-    def str_to_obj(self,
-                   reverse: bool):
+    def export_catalog_txt(self,
+                           output_path: str):
         """
-        Converts all string type columns in the catalog between type 'object' (needed for saving to hdf5) and type
-        'pandas.StringDtype' (needed for fast computation).
+        Save the catalog to a file in the txt format for quick checkout.
 
         Parameters
         ----------
-        name_s : bool
-            if reveres is set true, the type will be converted 'object' -> 'pandas.StringDtype'
+        output_path : str
+            path to the new file.
+
+        Raises
+        ------
+        ValueError
+            If not catalog exists in this data class.
         """
-        if not reverse:
-            for key in list(set(self.catalog.keys()[np.where(self.catalog.dtypes == 'string')])
-                            & {'name_s', 'stype'}):
-                self.catalog[key] = self.catalog[key].astype(object)
-        else:
-            for key in list(set(self.catalog.keys()[np.where(self.catalog.dtypes == 'object')])
-                            & {'name_s', 'stype'}):
-                self.catalog[key] = self.catalog[key].astype(pd.StringDtype())
+        if self.catalog is None:
+            raise ValueError('No catalog found')
+        np.savetxt(output_path, self.catalog, fmt='%f8')
+
+    def export_instrument(self,
+                          output_path: str):
+        """
+        Save the instrument to a file in the json format for reproduction.
+
+        Parameters
+        ----------
+        output_path : str
+            path to the new file.
+
+        Raises
+        ------
+        ValueError
+            If no instrument exists in this data class.
+        """
+        if self.inst is False:
+            raise ValueError('No instrument found')
+        import pickle
+        # Add config for quick checking and in case of random instrument:
+        self.options.array['configuration'] = self.inst['configuration']
+        # save options as object.
+        instrument_params = self.options
+        with open(output_path + '_parameters.pkl', 'wb') as f:
+            pickle.dump(instrument_params, f)
+
+    def import_parameters(self,
+                          input_path: str,
+                          overwrite: bool = False):
+        """
+        Save the catalog to a file in the txt format for quick checkout.
+        NB unsafe method, will destroy current parameters. C'est la vie!
+
+        Parameters
+        ----------
+        : param input_path : str
+            path to the new file.
+        Raises
+        ------
+        Nothing
+
+        """
+        # print('~~~')
+        # print('NB you are overwriting the Options object, set_scenario will change it back to custom settings')
+        # print('~~~')
+        import pickle
+        # --- load options from pickle
+        with open(input_path + '_parameters.pkl', 'rb') as f:
+            self.options = pickle.load(f)
+        # ---- bruh sound effect 2
+        # print('~~~')
+        # print('Array parameters', self.options.array)
+        # print('Miscellaneous parameters', self.options.other)
+        # print("Model's parameters", self.options.models)
+        # print('~~~')
+
+    def import_old_instrument(self,
+                          input_path: str,
+                          overwrite: bool = False):
+        """
+        Read old format instrument directly to data.inst[]
+
+        Parameters
+        ----------
+        : param input_path : str
+            path to the old file.
+        :param overwrite: str
+            If true, bus settings are replaced with new settings. UNSAFE!
+        Raises
+        ------
+        ValueError
+            If not catalog exists in this data class.
+
+        """
+
+        if self.inst and (not overwrite):
+            raise ValueError('Can not overwrite existing instrument')
+        import pickle
+
+        with open(input_path + '.pkl', 'rb') as f:
+            self.inst = pickle.load(f)
+
+
+

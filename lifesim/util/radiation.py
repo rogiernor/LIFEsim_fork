@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Union
-
+from scipy import stats
+import matplotlib.pyplot as plt
 from lifesim.util import constants
 
 
@@ -120,12 +121,12 @@ def black_body(mode: str,
         fgamma = planck_law(x=bins,
                             temp=temp,
                             mode='wavelength') * width
-    elif mode == 'frequency':
-        # TODO remove hardcoded np.newaxis solution. The redim is needed for the PhotonNoiseExozodi
-        #   class
-        fgamma = planck_law(x=bins,
-                            temp=temp,
-                            mode='frequency') * width[:, np.newaxis, np.newaxis]
+    # elif mode == 'frequency':
+    #     # TODO remove hardcoded np.newaxis solution. The redim is needed for the PhotonNoiseExozodi
+    #     #   class
+    #     fgamma = planck_law(x=bins,
+    #                         temp=temp,
+    #                         mode='frequency') * width[:, np.newaxis, np.newaxis]
     else:
         raise ValueError('Mode not recognised')
 
@@ -154,3 +155,40 @@ def import_spectrum(pathtofile: str,
         return spec
     else:
         return fgamma
+
+
+def spectral_lines(wl_bins, gas, thickness):
+    # ----- Database
+    spectral_database = {'o3':
+                        {'weight': [[0.45, 0.45], [0.05, 0.1]],
+                         'fwhm': [0.55, 2.0],
+                         'peak': [9.6, 14]},
+                         'h2o':
+                        {'weight': [[0.1, 0.25, 0.55, 0.85, 0.85], [0.025, 0.05, 0.1, 25, 0.45]],
+                         'fwhm': [0.6, 8.5],
+                         'peak': [7., 22.5]},
+                         'co2':
+                        {'weight': [[0.0, 0.01, 0.02, 0.05], [0.0, 0.005, 0.01, 0.025], [0.0, 0.4, 0.4, 0.4]],
+                         'fwhm': [0.5, 0.7, 4.0],
+                         'peak': [9.25, 10.35, 15]}}
+    # --------------------- code
+    # retrieve params
+    peaks = spectral_database[str(gas)]['peak']
+    # create x
+    # fig, ax = plt.subplots()
+    y_data_lorentzian = 1
+    for i, mean in enumerate(peaks):
+        fwhm = spectral_database[str(gas)]['fwhm'][i]
+        weight = spectral_database[str(gas)]['weight'][i][thickness]
+        x = (wl_bins * 10 ** 6 - mean) / (fwhm / 2)
+        # create line
+        y_data_lorentzian -= (1 / (1 + x ** 2)) * weight
+        # plot
+
+
+    #     ax.plot(wl_bins*10**6, y_data_lorentzian, label=str(gas)+' '+str(mean))
+    # ax.set(xlabel='wl [micron]', ylim=[0, 1.0])
+    # plt.legend()
+    # plt.show()
+
+    return y_data_lorentzian

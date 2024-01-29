@@ -1,7 +1,8 @@
 import warnings
 
 import numpy as np
-
+import lifesim.util.figures as fg
+import itertools
 
 # TODO: Rename habitable variable
 class Options(object):
@@ -55,93 +56,76 @@ class Options(object):
               in the habitable zone.
             - ``'t_search'`` : Duration of the search phase in [s].
     """
+
     def __init__(self):
         """
         """
-        self.array = {'diameter': 0.,
+        self.array = {'n_apertures': 0.,
+                      'array_config': None,
                       'quantum_eff': 0.,
                       'throughput': 0.,
                       'wl_min': 0.,
                       'wl_max': 0.,
                       'spec_res': 0,
                       'baseline': 0.,
-                      'bl_min': 0.,
-                      'bl_max': 0.,
                       'ratio': 0.,
-                      't_slew': 0.,
-                      't_efficiency': 0.}
+                      'area': 0.,
+                      't_efficiency': 0.,
+                      'technique': 0,
+                      'instrument_temperature': 0.0}  # fo
 
         self.other = {'image_size': 0,
-                      'wl_optimal': 0.,
+                      'fiber_angle': 0.,
                       'n_plugins': 0,
-                      'output_path': None,
-                      'output_filename': None}
+                      'random_seed': 0,
+                      'integration_time': 0.}
 
         self.models = {'localzodi': '',
-                       'habitable': ''}
+                       'habitable': '',
+                       'instrumental_photon_noise': bool}
 
-        self.optimization = {'N_pf': 0.,
-                             'snr_target': 0.,
-                             'limit': None,
-                             'habitable': False,
-                             't_search': 0.}
-
-    def set_scenario(self,
-                     case: str):
+    def set_scenario(self):
         """
         Sets the options according the chosen scenario
 
         Parameters
         ----------
-        case : str
-            The scenario after which to set the options. Possible scenarios are ``'optimistic'``,
-            ``'baseline'`` and ``'pessimistic'``
+        none! All are settings. Change these in the code by using the manual settings changer
         """
-
+        self.array['n_apertures'] = 4
+        self.array['array_config'] = 'emma x'  # '' will trigger auto
         self.array['quantum_eff'] = 0.7
         self.array['throughput'] = 0.05
-        self.array['spec_res'] = 20.
-        self.array['baseline'] = 20.
-        self.array['bl_min'] = 10.
-        self.array['bl_max'] = 100.
+        self.array['spec_res'] = 20.  # spectral resolution controlled here
+        self.array['baseline'] = 2.  #
         self.array['ratio'] = 6.
-        self.array['t_slew'] = 10. * 60. * 60.
-        self.array['t_efficiency'] = 0.8
+        self.array['t_efficiency'] = 0.8 # what do I use this for now?
+        self.array['area'] = 4.0
+        self.array['wl_min'] = 4.
+        self.array['wl_max'] = 18.5
+        self.array['technique'] = 1   # 0 for bracewell, 1 for chop, 2 for kernel
+        self.array['instrument_temperature'] = 50.  # K
+        # self.array['instrument_emissivity'] = 0.25  # K
 
-        self.other['image_size'] = 256  # TODO: or 512?
-        self.other['wl_optimal'] = 15
+        self.other['image_size'] = 256
+        self.other['fiber_angle'] = 45
         self.other['n_plugins'] = 5
+        self.other['random_seed'] = 1  # Todo configure in more detail?
+        self.other['integration_time'] = 24 * 60 * 60
+        self.other['talking_star'] = False
 
+        self.models['null_depth'] = 0.0000099
         self.models['localzodi'] = 'darwinsim'
         self.models['habitable'] = 'MS'
+        self.models['instrumental_photon_noise'] = True
+        self.models['ti_noise_norm_parameter'] = True
 
-        self.optimization['N_pf'] = 25
-        self.optimization['snr_target'] = 7
-        self.optimization['limit'] = {'A': np.inf,
-                                      'F': np.inf,
-                                      'G': np.inf,
-                                      'K': np.inf,
-                                      'M': np.inf}
-        self.optimization['habitable'] = True
-        self.optimization['t_search'] = 2.5 * 365. * 24. * 60. * 60.
-
-        if case == 'baseline':
-            self.array['diameter'] = 2.
-            self.array['wl_min'] = 4.
-            self.array['wl_max'] = 18.5
-
-        elif case == 'pessimistic':
-            self.array['diameter'] = 1.
-            self.array['wl_min'] = 6.
-            self.array['wl_max'] = 17.
-
-        elif case == 'optimistic':
-            self.array['diameter'] = 3.5
-            self.array['wl_min'] = 3.
-            self.array['wl_max'] = 20.
-
-        else:
-            warnings.warn('Option case not recognised, no options set')
+        # self.optimization['N_pf'] = 25
+        # self.optimization['snr_target'] = 7
+        # self.optimization['limit'] = np.array(((0, 1, 2, 3, 4),
+        #                                        (np.inf, np.inf, np.inf, np.inf, np.inf)))
+        # self.optimization['habitable'] = True
+        # self.optimization['t_search'] = 2.5 * 365. * 24. * 60. * 60.
 
     def set_manual(self, **kwargs):
         """
@@ -164,9 +148,8 @@ class Options(object):
             option_set = False
 
             # check if the key exists in any of the options dictionaries
-            for sub_dict in [self.array, self.other, self.models, self.optimization]:
+            for sub_dict in [self.array, self.other, self.models]:
                 if key in sub_dict:
-
                     # set the option
                     sub_dict[key] = kwargs[key]
                     option_set = True
@@ -175,4 +158,3 @@ class Options(object):
             # raise error if no option was set
             if not option_set:
                 raise ValueError(str(key) + ' is an unknown option')
-

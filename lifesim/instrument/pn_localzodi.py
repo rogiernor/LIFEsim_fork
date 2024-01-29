@@ -2,11 +2,12 @@ from typing import Union
 
 import numpy as np
 
-from lifesim.core.modules import PhotonNoiseStarModule
+from lifesim.core.modules import PhotonNoiseModule
 from lifesim.util.radiation import black_body
+from lifesim.util.figures import single_map
 
 
-class PhotonNoiseLocalzodi(PhotonNoiseStarModule):
+class PhotonNoiseLocalzodi(PhotonNoiseModule):
     """
     This class simulates the noise contribution of the thermal localzodical dust to the
     interferometric measurement of LIFE.
@@ -81,7 +82,6 @@ class PhotonNoiseLocalzodi(PhotonNoiseStarModule):
             lat_s = self.data.single['lat']
         else:
             lat_s = self.data.catalog.lat.iloc[index]
-
         # check if the model exists
         if not ((self.data.options.models['localzodi'] == 'glasse')
                 or (self.data.options.models['localzodi'] == 'darwinsim')):
@@ -127,9 +127,32 @@ class PhotonNoiseLocalzodi(PhotonNoiseStarModule):
             )
 
         lz_flux = lz_flux_sr * (np.pi * self.data.inst['hfov'] ** 2)
-
-        # calculate the leakage contribution to the measurement
-        lz_leak = (ap * self.data.inst['t_map']).sum(axis=(-2, -1)) / ap.sum() * lz_flux \
+        # print('angular normalizer', np.pi * self.data.inst['hfov'] ** 2)
+        # print('lz_flux 11', lz_flux[11])
+        # print('map * ap', (self.data.inst['maps'][:, 1]*ap).sum(axis=(-2,-1))/ ap.sum() )
+        # fig
+        # wl_slab=18
+        # extent_value = self.data.inst['hfov_mas'][wl_slab]
+        # extent = [-extent_value, extent_value, -extent_value, extent_value]
+        # labels = ['alpha [mas]', 'beta[mas]']
+        # single_map(lz_flux[11]*ap, extent=extent, plot_title=format(self.data.inst['wl_bins'][wl_slab], '.2f')+ '$\mu$m', labels=labels, save=True, save_name='Localzodi sky brightness sr', cmap='Reds', intensity='Spectral radiance [ph/sr/s/m$^2$] ')
+        # single_map(self.data.inst['maps'][11, -1]*ap,extent=extent, labels=labels, save=True, save_name='Localzodi emma map', cmap='Reds', intensity='Normalized transmission[-] ')
+        # single_map( ap * (self.data.inst['maps'][11, -1]), plot_title=format(self.data.inst['wl_bins'][wl_slab], '.2f')+ '$\mu$m', extent=extent , labels=labels, save=True, save_name='ap', cmap='Reds', intensity='[-] ')
+        lz_leak = np.zeros((self.data.inst['maps'].shape[0],self.data.inst['maps'][:, 1::2].shape[1]))
+        for i, iter_map in enumerate(np.swapaxes(self.data.inst['maps'][:, 1::2, :, :], 0, 1)):
+            # print('tr. normalizer', (ap * iter_map).sum(axis=(-2, -1)) / ap.sum())
+            lz_leak[:, i] = (ap * iter_map).sum(axis=(-2, -1)) / ap.sum() * lz_flux \
                   * self.data.inst['telescope_area']
+        # calculate the leakage contribution to the measurement
+        # lz_leak = (ap * self.data.inst['t_map']).sum(axis=(-2, -1)) / ap.sum() * lz_flux \
+        #           * self.data.inst['telescope_area']
+        # print('lz_noise', lz_leak)
+        if self.data.inst['combination_technique'] == 2:
+            pass
+        else:
+            lz_leak = lz_leak[:, -1]
+            # print('lz_noise1', lz_leak[wl_slab]/self.data.inst['telescope_area'])
+            # lz_leak = (ap * self.data.inst['maps'][:, -2]).sum(axis=(-2, -1)) / ap.sum() * lz_flux \
+            #       * self.data.inst['telescope_area']
 
         return lz_leak

@@ -25,12 +25,13 @@ class InstrumentModule(Module):
         # instrument module needs access to their data and control over when they execute
         # TODO: not optimal to hardcode the s_number like this. Maybe find a way to draw it from
         #   options
-        self.add_socket(s_name='photon_noise_star',
-                        s_type=PhotonNoiseStarModule,
+        self.add_socket(s_name='photon_noise',
+                        s_type=PhotonNoiseModule,
                         s_number=5)
-        self.add_socket(s_name='photon_noise_universe',
-                        s_type=PhotonNoiseUniverseModule,
-                        s_number=5)
+        # also add instrument photon noise
+        self.add_socket(s_name='instrument_photon_noise',
+                        s_type=PhotonInstrumentNoiseModule,
+                        s_number=1)
 
     @abc.abstractmethod
     def get_snr(self):
@@ -80,10 +81,10 @@ class InstrumentModule(Module):
         pass
 
 
-class PhotonNoiseStarModule(Module):
+class PhotonNoiseModule(Module):
     """
-    Module for simulating astrophysical sources and their photon shot noise contribution specific
-    to a single star to the interferometric measurement.
+    Module for simulating astrophysical sources and their photon shot noise contribution to the
+    interferometric measurement.
     """
     @abc.abstractmethod
     def noise(self,
@@ -100,24 +101,20 @@ class PhotonNoiseStarModule(Module):
         """
         pass
 
-
-class PhotonNoiseUniverseModule(Module):
+class PhotonInstrumentNoiseModule(Module):
     """
-    Module for simulating astrophysical sources and their photon shot noise contribution specific
-    to a single universe to the interferometric measurement.
+    Module for simulating instrumental sources and their photon shot noise contribution to the
+    interferometric measurement.
     """
     @abc.abstractmethod
-    def noise(self,
-              index: Union[int, type(None)]):
+    def inst_t_noise(self):
         """
-        Calculates the photon shot noise contribution.
+        Calculates the thermal instrument photon shot noise contribution.
+        Distinguished so it can be called in apply options()
 
-        Parameters
+        :returns
         ----------
-        index : Union[int, type(None)]
-            If an integer is given, the photon noise of the planet corresponding to the respective
-            interger row position in the catalog is given. If `None` is given, the photon noise is
-            calculated for the parameters found in `bus.data.single`.
+        ti_leak: The thermal instrument leakage in photon per bin
         """
         pass
 

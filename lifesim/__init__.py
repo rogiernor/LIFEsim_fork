@@ -1,5 +1,3 @@
-__version__ = '0.2.32'
-
 from lifesim.core.core import Module, Bus
 
 from lifesim.instrument.instrument import Instrument
@@ -7,6 +5,7 @@ from lifesim.instrument.transmission import TransmissionMap
 from lifesim.instrument.pn_exozodi import PhotonNoiseExozodi
 from lifesim.instrument.pn_localzodi import PhotonNoiseLocalzodi
 from lifesim.instrument.pn_star import PhotonNoiseStar
+from lifesim.instrument.pn_thermalinst import PhotonNoiseThermalInst
 
 from lifesim.util.importer import SpectrumImporter
 

@@ -9,3 +9,5 @@ temp_sun = 5778.
 
 radius_earth = 6.371e+6
 temp_earth = 276.
+
+rad_per_mas = 4.8481368e-9
