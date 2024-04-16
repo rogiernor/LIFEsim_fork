@@ -70,7 +70,7 @@ experiment_settings = [[1, 4, 'angel woolf']]
 #
 parameters = [2., 6., 4., 80]
 combinations = list(itertools.product([0.1, 0.25, 0.5, 0.75, 1.0], repeat=4))
-save_bool = True
+save_bool = False
 #--------------
 print('start at', time.perf_counter())
 for n, setting in enumerate(experiment_settings):
